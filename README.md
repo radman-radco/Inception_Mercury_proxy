@@ -515,8 +515,6 @@ curl http://localhost:8101/chat/completions \
   -H "content-type: application/json" \
   -d '{
     "messages": [
-      {"role": "user", "content": "My name is Sam."},
-      {"role": "assistant", "content": "Hi Sam!"},
       {"role": "user", "content": "What is my name?"}
     ],
     "stream": false,
