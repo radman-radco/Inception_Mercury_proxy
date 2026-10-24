@@ -1,4 +1,5 @@
-# `inception-openai-proxy`
+# Mercury AI OpenAI styled proxy 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 An OpenAI-compatible HTTP proxy for [Inception Labs](https://inceptionlabs.ai)'s **Mercury** model, with streaming, tool-call reconstruction, web search, timing instrumentation, and a rotating pool of optional upstream proxies.
 
