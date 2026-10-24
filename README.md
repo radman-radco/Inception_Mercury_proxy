@@ -552,11 +552,6 @@ This project is provided **as-is**, for **educational and research purposes only
 
 See [`WARNING.txt`](./WARNING.txt) for the full notice. If you do not agree with it, do not run this code.
 
----
 
-## License
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-MIT
-</｜｜DSML｜｜ parameter>
-</｜｜DSML｜｜ invoke>
-</｜｜DSML｜｜ calls>
