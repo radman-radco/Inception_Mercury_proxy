@@ -1,0 +1,9 @@
+{
+    "proxy": {
+        "enabled": true,
+        "path": "./proxies.txt"
+    },
+    "browser": {
+        "type": "chrome"
+    }
+}
