@@ -851,6 +851,16 @@ async function handleStreaming(req, res, ctx) {
         const safe = streamer.feed(event.content);
         if (safe) content(safe);
       }
+      
+      // If the model generates more tokens than the user requested, stop the stream.
+      if(completionTokens > ctx.max_tokens){
+          upstream?.cancel().catch(() => {});
+          const usage = buildUsage(promptTokens, completionTokens);
+          write(chunkObj(msgId, created, {}, "length", usage));
+          res.write("data: [DONE]\n\n");
+          res.end();
+          return;
+      }
     }
 
     closeSearchPhase();
@@ -1001,6 +1011,7 @@ app.post("/chat/completions", async (req, res) => {
       reasoningEffort: resolveReasoning(body.intelligence),
       webSearch: Boolean(body.search),
     },
+    max_tokens: body.max_tokens || 2_000,
   };
 
   if (body.stream ?? true) return handleStreaming(req, res, ctx);
