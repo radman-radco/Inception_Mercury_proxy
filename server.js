@@ -263,7 +263,7 @@ async function search_for_proxy(loop) {
   }
 
   if (loop === true) {  
-    setTimeout(() => search_for_proxy(true), 30 * 1000) //30 seconds
+    setTimeout(() => search_for_proxy(true), 3 * 60 * 1000) //30 seconds
   }
   proxy_searcher_running = false;
   return true
