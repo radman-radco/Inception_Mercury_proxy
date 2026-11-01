@@ -11,6 +11,9 @@
  *   search:       false by default, pass true to enable web search
  *   chatId:       reuse the same value to keep the same upstream conversation
  */
+
+console.error("========================================================================\nThanks for using Inception Mercury proxy, this proxy is only for Educational purposes, if you like the project consider leaving a star on my github repo: https://github.com/radman-radco/Inception_Mercury_proxy \n\n [] Starting up... Please dont make any requests within the next 30s while we find the best proxy to use... \n========================================================================\n")
+
 const express = require("express");
 const axios = require("axios");
 const { randomInt } = require("node:crypto");
@@ -59,7 +62,6 @@ let clients = [{
   index: 0
 }]
 
-
 async function testProxy() {
   try {
     let client = new Impit({
@@ -81,7 +83,8 @@ async function testProxy() {
 
 function create_new_proxy_client() {
   try {
-    if (PROXY_LIST.length == 0) return { success: false, error: "Ran out of proxies" }
+    if(!config?.proxy?.enabled) return { success: false, error: "Proxy is not enabled"}
+    if (PROXY_LIST.length == 0 ) return { success: false, error: "Ran out of proxies" }
 
     let proxy_url = PROXY_LIST[0]
     PROXY_LIST.splice(0, 1) //remove the picked proxy from the list
@@ -101,7 +104,7 @@ function create_new_proxy_client() {
       status: "active",
       proxy_url: proxy_url,
       successfull_reqs: 0,
-      index: clients.length,
+      index: clients.length
     })
     invalidateToken()
 
@@ -115,7 +118,7 @@ function create_new_proxy_client() {
 
 function get_best_client() {
   let sorted = [...clients].sort((a, b) => b.successfull_reqs - a.successfull_reqs) //sort by number of successfull_reqs (most to least) to get the most reliable client first
-    .sort((a, b) => Number(b.use_proxy) - Number(a.use_proxy)) //sort by use_proxy (best to dont use proxy first)
+    .sort((a, b) => Number(a.use_proxy) - Number(b.use_proxy)) //sort by use_proxy (best to dont use proxy first)
   sorted = sorted.filter(c => c.status == "active") //
 
   if (sorted.length == 0) {
@@ -229,31 +232,38 @@ async function getToken(best_client) {
 
 
 let proxy_searcher_running = false;
-async function search_for_proxy(timer) {
+async function search_for_proxy(loop) {
+  if(!config?.proxy?.enabled) return;
   if (proxy_searcher_running == true) return;
   proxy_searcher_running = true;
 
   console.log("[SEARCH_FOR_PROXY] searching for proxy...")
 
   let errored = true
-  while (errored) {
+  while (errored) {  
+    invalidateToken()
     let best_client = get_best_client()
     try {
       let fetched_token = await fetchToken(best_client)
-      if (fetched_token) errored = false
+      if (fetched_token){
+         errored = false         
+         clients[best_client.index].successfull_reqs++;
+      }
     } catch (err) {
       errored = true
       console.error("[SEARCH_FOR_PROXY] Error fetching token: ", err)
       clients[best_client.index].status = "unreachable"
+      clients[best_client.index].successfull_reqs = 0
       setTimeout(() => {
         if (clients[best_client.index].status === "unreachable") clients[best_client.index].status = "active"
       }, 1 * 60 * 60 * 1000) //1 hour
       invalidateToken()
     }
+
   }
 
-  if (timer == true) {
-    setTimeout(search_for_proxy, 30 * 1000) //30 seconds
+  if (loop === true) {  
+    setTimeout(() => search_for_proxy(true), 30 * 1000) //30 seconds
   }
   proxy_searcher_running = false;
   return true
@@ -564,6 +574,7 @@ async function callInception({ convId, messages, reasoningEffort, webSearch }) {
         if (clients[best_client.index].status == "rate_limited") clients[best_client.index].status = "active"
       }, 1 * 60 * 1000) //1 minute
       search_for_proxy(false)
+      throw new Error("429: rate limited")
     }
 
     if (res.status !== 200) {
@@ -575,8 +586,9 @@ async function callInception({ convId, messages, reasoningEffort, webSearch }) {
     return res.body; // Return ReadableStream, not res.data
   } catch (error) {
     error.message = error?.message?.toLowerCase()?.trim()
-    if (error?.message?.includes("timeout") || error?.message?.includes("time out") || error?.message?.includes("Network error") || error?.message?.includes("rejected")) {
+    if (error?.message?.includes("timeout") || error?.message?.includes("time out") || error?.message?.includes("Network error") || error?.message?.includes("rejected") || error?.message?.includes("failed") || error?.message?.includes("refused") ) {
       clients[best_client.index].status = "unreachable"
+      clients[best_client.index].successfull_reqs = 0
       invalidateToken()
       setTimeout(() => {
         if (clients[best_client.index].status === "unreachable") {
@@ -786,7 +798,7 @@ const hostOf = (url) => {
   }
 };
 
-async function handleStreaming(req, res, ctx) {
+async function handleStreaming(req, res, ctx, attempt = 1) {
   const { msgId, created, promptTokens } = ctx;
 
   res.set({
@@ -880,18 +892,23 @@ async function handleStreaming(req, res, ctx) {
     console.error(`[STREAM] Error: ${err.message.slice(0, 1000)}`);
     search_for_proxy(false);
     deleteConvId(ctx.chatId);
+  if(attempt < 3){
+    await new Promise((r) => setTimeout(r, 1000))
+    await handleStreaming(req, res, ctx, attempt + 1);
+  }else{
     if (err?.message?.includes("429") || err?.message?.includes("timeout") || err?.message?.includes("time out")) {
     write({ error: { message: "Got ratelimited please wait 20s while we try to find a different proxy...", type: "proxy_error" } });
     }else{
     write({ error: { message: err.message, type: "proxy_error" } });
     }
     res.write("data: [DONE]\n\n");
+  }
   } finally {
     res.end();
   }
 }
 
-async function handleNonStreaming(req, res, ctx) {
+async function handleNonStreaming(req, res, ctx, attempt = 1) {
   const { msgId, created, promptTokens } = ctx;
 
   try {
@@ -939,6 +956,10 @@ async function handleNonStreaming(req, res, ctx) {
         }
       });
     } else if (err.message.includes("429")) {
+      if(attempt < 3){
+        await new Promise((r)=> setTimeout(r, 700))
+        return handleNonStreaming(req, res, ctx, attempt+ 1);
+      }else{
       return res.status(429).json({
         "error": {
           "message": "Murcery is rate limiting your ip, please wait 60s or configer proxy settings.",
@@ -949,7 +970,9 @@ async function handleNonStreaming(req, res, ctx) {
       });
     }
 
-    res.status(400).json({ error: { message: err.message, type: "proxy_error" } });
+  }
+  
+   res.status(400).json({ error: { message: err.message, type: "proxy_error" } });
   }
 }
 
@@ -1124,6 +1147,7 @@ app.post("/chat/follow-ups", async (req, res) => {
     console.error(`[FOLLOW-UPS] Error: ${error.message}`);
     if (error?.message?.includes("timeout") || error?.message?.includes("time out") || error?.message?.includes("Network error") || error?.message?.includes("rejected")) {
       clients[best_client.index].status = "unreachable"
+      clients[best_client.index].successfull_reqs = 0
       invalidateToken()
       setTimeout(() => {
         if (clients[best_client.index].status === "unreachable") clients[best_client.index].status = "active"
