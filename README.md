@@ -1,141 +1,72 @@
-# Mercury AI OpenAI styled proxy 
+# Mercury AI Proxy
+
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-An OpenAI-compatible HTTP proxy for [Inception Labs](https://inceptionlabs.ai)'s **Mercury** model, with streaming, tool-call reconstruction, web search, timing instrumentation, and a rotating pool of optional upstream proxies.
+**Free, unlimited access to [Mercury](https://chat.inceptionlabs.ai) — the same model behind Inception Labs' paid API — by routing requests through their free chat endpoint and exposing it as a fully OpenAI-compatible local server.**
+
+This proxy gives you free acsess to Mercury-3 for free: including streaming, tool calls (~85% reliability), and up to 1,000,000 tokens of context. The included 1,900+ proxy list gives each proxy its own 30 req/min budget from Mercury's backend (1,900 × 30 = **57,000 req/min**), and rolling session management automatically switches proxies before you hit a limit — so long agentic runs never get cut off. In local testing on a consumer PC, we reached **927 req/s** before stopping.
+
+Personally used with [OpenCode](https://opencode.ai). Experimental and educational use only — see [Legal](#legal).
 
 > **⚠️ Educational use only.** This project exists to demonstrate how an OpenAI-compatible adapter can be built against a streaming upstream that does not natively expose the OpenAI wire format. It is **not** intended for abuse, resale, circumvention of access controls, or any use that violates Inception Labs' or Vercel's Terms of Service. See [`WARNING.txt`](./WARNING.txt) before running it. You are responsible for how you use this code.
 
 ---
 
-## Table of contents
+## What it does
 
-- [What this is](#what-this-is)
-- [Features](#features)
-- [Measured performance](#measured-performance)
-- [Upstream limits you should know](#upstream-limits-you-should-know)
-- [Installation](#installation)
-- [Configuration (`config.json`)](#configuration-configjson)
-- [Proxy pool](#proxy-pool)
-- [API reference](#api-reference)
-- [Message format](#message-format)
-- [Tool calls](#tool-calls)
-- [Streaming markers and timing](#streaming-markers-and-timing)
-- [Examples](#examples)
-- [Troubleshooting](#troubleshooting)
-- [Legal](#legal)
+Mercury's paid API isn't free, but their public web chat is. This proxy sits between you and that chat endpoint, handling session tokens, request formatting, and response parsing — then hands everything back in the OpenAI wire format your tools already understand.
 
----
+It also solves a throughput problem. Mercury limits each IP to **30 requests per minute**. With a pool of proxies, each one gets its own independent 30 req/min budget. The included `proxies.txt` ships with **1,900+ proxies**, giving a theoretical ceiling of **57,000 requests per minute**. In local testing we reached **927 req/s** before stopping — and it likely goes higher.
 
-## What this is
+When a session approaches its limit on the current proxy, the proxy automatically rolls to the next one — no dropped requests, no manual intervention required.
 
-Mercury is a diffusion-based language model served at `chat.inceptionlabs.ai`. Its public chat surface speaks a bespoke SSE dialect that is **not** the OpenAI wire format: messages are `parts` arrays, tool calls are emitted as inline `[TOOL_CALL]: {...}` text, web-search sources arrive as separate `source-url` events, and authentication is a short-lived `x-session-token` fetched from `/api/session`.
-
-This proxy adapts all of that into `/v1/chat/completions`-compatible JSON and SSE. Point any OpenAI SDK at `http://localhost:8101` and it just works — including `stream: true`, `tools`, and `tool_choice`-style round-trips.
-
-It was built as a contribution to [ZeroKey](https://github.com/downloaddoctor/zerokey), which already ships Mercury 3 as its Inception provider. ZeroKey handles the UI, provider registry, and long-chat rotation; this repo is the standalone proxy that contributed the streaming tool-call reconstruction and timing instrumentation.
+```
+Your PC running the worker  ==>  Free Proxy  ==> chat.inceptionlabs.ai
+```
 
 ---
 
 ## Features
 
-### Core
-
-- **OpenAI-compatible `POST /chat/completions`** — accepts `messages`, `tools`, `stream`, and the standard response shape.
-- **True streaming** — SSE `chat.completion.chunk` deltas, terminated by `data: [DONE]`. No buffering.
-- **Non-streaming** — set `stream: false` for a single `chat.completion` object.
-- **Tool calls (beta)** — Mercury has no native function calling. Tools are described in a prompt and `[TOOL_CALL]: {...}` lines are parsed back into OpenAI's `tool_calls` structure, streamed in the same fragmented format OpenAI uses (`id` + `function.name` first, then `arguments` deltas, then `finish_reason: "tool_calls"`).
-- **Web search** — `search: true` enables Mercury's built-in web search. Sources are returned as an OpenAI-style `sources` array and `<SEARCHING>` / `<FINISHED_SEARCHING>` markers are surfaced as content deltas so text-only clients can show progress.
-- **Reasoning levels** — `intelligence: 0–3` maps to Mercury's `instant` / `low` / `medium` / `high`.
-- **Conversation reuse** — pass the same `chatId` to keep the same upstream conversation across requests. Omit it and a UUID is generated per request.
-
-### Infrastructure
-
-- **TLS fingerprint impersonation** — uses [`impit`](https://www.npmjs.com/package/impit), which wraps Rust's `reqwest` with real browser TLS/HTTP2 fingerprints. Node's native `fetch`/`axios` present an OpenSSL fingerprint that Vercel's bot protection flags; `impit` does not.
-- **Multi-client rotation** — a pool of `Impit` instances, each optionally bound to a different upstream proxy. `get_best_client()` picks the healthiest one based on chat count and proxy status.
-- **Proxy pool** — load a list of `http://host:port` proxies from a file. Each proxy becomes its own client. Unhealthy proxies are marked `unreachable` and skipped.
-- **Automatic failover** — 401/403 invalidates the token and retries with a fresh one. 429 marks the client `rate-limited` for 60 s. Timeouts and network errors mark it `unreachable` for 1 hour. A background searcher continuously probes for a working client.
-- **Timing instrumentation** — the final `stop` chunk carries a `timing` object with time-to-first-token, total streaming time, and tokens/sec.
-- **`POST /decide/run`** — pass-through to Inception's Decide API with auth injection and automatic retry on token rejection.
-- **`GET /health`** — `{ status, token_loaded }` for liveness checks.
+- **OpenAI-compatible API** — `POST /chat/completions` with streaming, tool calls, and non-streaming modes. Works with any OpenAI SDK, CLI tool, or editor integration out of the box.
+- **Free access to Mercury** — routes through the public chat endpoint. The paid API gives the same model; this gives it to you at no cost.
+- **Up to 1,000,000 token context** — the full Mercury window. Recommended to compact around 500k tokens to avoid quality degradation.
+- **Tool calls with ~85% reliability** — Mercury has no native function calling. The proxy adds it by injecting tool definitions as a system prompt, parsing the model's structured output, and re-emitting it as standard OpenAI `tool_calls`. Reliability drops to ~62% on conversations over 75k tokens.
+- **Automatic proxy rotation** — a background health checker keeps the pool warm. Dead proxies are quarantined for an hour, rate-limited ones for 60 seconds. When all active proxies are exhausted, a fresh one is pulled from the list automatically.
+- **57,000+ req/min theoretical throughput** — 1,900+ proxies × 30 req/min each. Real-world tested to 927 req/s on a consumer machine.
+- **Web search** — pass `"search": true` to let Mercury search the web; sources come back as a cited array in the response.
+- **Follow-ups endpoint** — `POST /chat/follow-ups` returns deduplicated suggested follow-up questions.
+- **Decide API** — `POST /decide/run` exposes Inception's structured classification/scoring endpoint with auto-injected auth.
+- **Timing data** — every streaming response ends with time-to-first-token, total streaming time, and tokens/sec.
 
 ---
 
-## Measured performance
+## Performance
 
-Benchmarked against the upstream with a warm client. Numbers are approximate and will vary by region, time of day, and upstream load.
+Benchmarked locally, single machine, no proxy:
 
-### No proxy (default — uses your machine directly)
-
-| Metric | Input/output < 75k tokens | Input/output > 75k tokens |
+| Context size | Time to first token | Throughput |
 |---|---|---|
-| Time to first token | **~200–600 ms** | **~1–7 s** |
-| Throughput | **~954–1279 t/s** | **~717–924 t/s** |
-| Tool-call reliability (beta) | **~87 %** | **~62 %** |
+| < 75k tokens | ~200–600 ms | ~954–1,279 t/s |
+| > 75k tokens | ~1–7 s | ~717–924 t/s |
 
-**Reading the table:** short prompts start fast and stream fast. Long prompts (over 75k input or output tokens) pay a visible TTFT penalty because the model has more context to process before the first token; throughput also drops ~20–30 %. Tool-call reliability degrades on long conversations because the `[TOOL_CALL]` marker is more likely to be split across chunks or wrapped in markdown fences by the model — the parser handles both, but not perfectly.
+**Tool call reliability:** ~85% on short conversations, ~62% on conversations over 75k tokens.
 
-### With a proxy
-
-Proxy overhead depends entirely on the node. A healthy datacenter proxy adds ~50–150 ms to TTFT and roughly the same throughput. A dead or overloaded proxy will fail the 4-second session timeout and be marked `unreachable`.
+With proxies enabled, throughput scales with how many are active in the pool. Each proxy gets its own independent 30 req/min budget from Mercury's backend — the 927 req/s figure above was achieved by spreading load across the proxy pool on a single consumer machine.
 
 ---
 
-## Upstream limits you should know
+## Quick start
 
-These are hard limits enforced by `chat.inceptionlabs.ai`, not by this proxy:
-
-| Limit | Value | Notes |
-|---|---|---|
-| Requests per second per IP | **30 req/s** | No token-rate limit, just request-rate. Exceed it and you get a `429`. |
-| Maximum context | **1,000,000 tokens** | You can send up to 1M tokens in a single request without issues. |
-| Recommended context | **< 750,000 tokens** | Beyond ~750k, performance degrades noticeably (see the table above). Keep it lower for production use. |
-
-If you run multiple proxies, each gets its own 30 req/s budget. That is the main reason the proxy pool exists — not to bypass the limit, but to spread load across IPs so no single one saturates.
-
----
-
-## Installation
-
-### Prerequisites
-
-- **Node.js 20.18.1 or newer** (required by `undici@7`, which `impit` depends on). Node 22 LTS is recommended.
-- **npm** (comes with Node).
-
-On Windows, if `npm` fails with `running scripts is disabled`, either:
-
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-```
-
-or use `npm.cmd` instead of `npm`.
-
-### Steps
+**Requirements:** Node.js 20.18.1 or newer (Node 22 LTS recommended)
 
 ```bash
-git clone https://github.com/<you>/inception-openai-proxy.git
-cd inception-openai-proxy
+git clone https://github.com/radman-radco/Inception_Mercury_proxy
+cd Inception_Mercury_proxy
 npm install
 ```
 
-Create `config.json` (see below), then:
-
-```bash
-node server.js
-```
-
-The proxy listens on `http://localhost:8101` by default. Override with `PORT`:
-
-```bash
-PORT=9000 node server.js
-```
-
----
-
-## Configuration (`config.json`)
-
-`server.js` reads `./config.json` at startup. The file is required — if it is missing, the process exits immediately with `Error reading config file`.
-
-### Minimal config (no proxy)
+Create `config.json` in the project root:
 
 ```json
 {
@@ -144,13 +75,27 @@ PORT=9000 node server.js
 }
 ```
 
-### Full config
+Start the server:
+
+```bash
+node server.js
+```
+
+The proxy listens on `http://localhost:8101`. **Wait about 30 seconds on first start** while it finds and validates a working session before sending requests.
+
+To use a different port: `PORT=9000 node server.js`
+
+> **Windows note:** if `npm install` fails with a script execution error, run `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned` in PowerShell first.
+
+---
+
+## Enabling the proxy pool
+
+For higher throughput, enable the included proxy list. This is what unlocks the 57,000 req/min ceiling.
 
 ```json
 {
-  "browser": {
-    "type": "chrome"
-  },
+  "browser": { "type": "chrome" },
   "proxy": {
     "enabled": true,
     "path": "./proxies.txt"
@@ -158,369 +103,173 @@ PORT=9000 node server.js
 }
 ```
 
-### Field reference
+`proxies.txt` ships with 1,900+ public proxies in `http://host:port` format. Free proxies are unreliable — expect 40–60% to be dead at any given moment. The pool handles this: failed proxies are marked unreachable, healthy ones are prioritised, and a background worker keeps probing so there's always a live option ready.
 
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `browser.type` | string | `"chrome"` | Browser profile `impit` impersonates. Valid values: `"chrome"`, `"firefox"`, `"edge"`. This controls the TLS ClientHello, HTTP/2 settings, header order, and ALPN list sent to the upstream. |
-| `proxy.enabled` | boolean | `false` | When `true`, the proxy pool is loaded from `proxy.path` and clients are created per proxy. When `false`, a single direct client is used. |
-| `proxy.path` | string | `"./proxies.txt"` | Path to a newline-delimited list of `http://host:port` proxies. Only lines that contain `http://` and `:` are kept. |
-
-### Behaviour
-
-- If `proxy.enabled` is `true` but `proxy.path` is missing or the file is empty, the server logs a warning and exits — it does not silently fall back to direct.
-- If `proxy.enabled` is `false`, `proxy.path` is ignored.
-- `browser.type` is applied to every client, proxied or not.
-
----
-
-## Proxy pool
-
-Free public proxies are unreliable — expect 40–60 % to be dead at any moment. The pool is designed around that reality.
-
-### `proxies.txt` format
-
-One proxy per line, `http://host:port`, nothing else:
-
+**Format** (one per line):
 ```
 http://130.110.103.245:3128
 http://38.123.220.105:999
-http://79.106.231.17:8080
 ```
 
-- Lines are split on `\r\n`, so Windows line endings are fine.
-- Empty lines and lines without `http://` are filtered out at load.
-- Do **not** include `https://` — most free proxies speak plain HTTP and tunnel HTTPS via `CONNECT`. If the node genuinely supports TLS, `http://` still works because `impit` will negotiate it during the CONNECT.
-
-### How rotation works
-
-1. On startup, one direct client is created (`use_proxy: false`, `index: 0`).
-2. Each call to `get_best_client()` sorts active clients by `use_proxy` (direct first), then by `chats` (fewest first). If none are active, it calls `create_new_proxy_client()`, which pops the next proxy off `PROXY_LIST`, creates an `Impit` instance bound to it, and adds it to the pool.
-3. When a request fails:
-   - **401 / 403** → token is invalidated, the same client is retried once with a fresh token.
-   - **429** → the client is marked `rate-limited` for 60 s, then reactivated automatically.
-   - **Timeout / network error** → the client is marked `unreachable` for 1 hour.
-4. A background `search_for_proxy(true)` loop runs every 10 s, probing for a working client so the pool stays warm even when no requests are coming in.
-
-### Important
-
-The proxy pool is **not** a way to circumvent the 30 req/s per-IP limit. Each proxy gets its own budget because it has its own IP, but the limit still applies to each one. If you push more than 30 req/s through a single proxy, you will get 429s on that proxy.
+Each proxy gets its own Mercury session and its own 30 req/min budget. The proxy rotation is rolling — when a session's limit is approaching, the next proxy is picked automatically before the current one starts failing.
 
 ---
 
-## API reference
+## Usage
 
-### `POST /chat/completions`
+Point any OpenAI-compatible client at `http://localhost:8101`. The API key field is ignored — pass anything.
 
-OpenAI-compatible chat completions.
+### Python
 
-**Request body**
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8101", api_key="unused")
+
+for chunk in client.chat.completions.create(
+    model="mercury",
+    messages=[{"role": "user", "content": "Explain diffusion models in one paragraph."}],
+    stream=True,
+    extra_body={"intelligence": 2},
+):
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="", flush=True)
+```
+
+### Node.js
+
+```javascript
+import OpenAI from "openai";
+
+const client = new OpenAI({ baseURL: "http://localhost:8101", apiKey: "unused" });
+
+const stream = await client.chat.completions.create({
+  model: "mercury",
+  messages: [{ role: "user", content: "What is 2 + 2?" }],
+  stream: true,
+  extra_body: { intelligence: 1 },
+});
+
+for await (const chunk of stream) {
+  const content = chunk.choices[0]?.delta?.content;
+  if (content) process.stdout.write(content);
+}
+```
+
+### curl
+
+```bash
+curl -N http://localhost:8101/chat/completions \
+  -H "content-type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Hi"}],"stream":true}'
+```
+
+### Request fields
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `messages` | array | `[]` | OpenAI-format messages. See [Message format](#message-format). |
-| `stream` | boolean | `true` | `true` for SSE, `false` for a single JSON response. |
-| `tools` | array | `[]` | OpenAI-format tool definitions. See [Tool calls](#tool-calls). |
-| `intelligence` | number \| string | `2` | Reasoning level. `0` = instant, `1` = low, `2` = medium, `3` = high. Also accepts the level name. |
-| `search` | boolean | `false` | Enable Mercury's web search. |
-| `chatId` | string | random UUID | Reuse the same value to keep the same upstream conversation. |
+| `messages` | array | — | Standard OpenAI message array |
+| `stream` | boolean | `true` | `true` for server-sent events, `false` for a single JSON response |
+| `tools` | array | `[]` | OpenAI-format tool definitions |
+| `intelligence` | 0–3 | `2` | Reasoning depth: `0` instant · `1` low · `2` medium · `3` high |
+| `search` | boolean | `false` | Enable Mercury's web search |
+| `chatId` | string | random UUID | Reuse to continue the same upstream conversation |
+| `max_tokens` | number | `2000` | Stop after this many completion tokens |
 
-**Response (streaming)** — SSE stream of `chat.completion.chunk` objects, terminated by `data: [DONE]`.
+---
 
-**Response (non-streaming)** — a single `chat.completion` object.
+## Context and long sessions
 
-**Errors** — returned as `{ "error": { "message": "...", "type": "..." } }` with an appropriate status code:
+Mercury supports up to **1,000,000 tokens** in a single request — the same limit as the paid API. For agentic or multi-turn workflows, the proxy handles session rotation automatically — a session expiring mid-task won't interrupt your run.
 
-| Status | Meaning |
-|---|---|
-| `400` | Upstream error, malformed request, or proxy error. `error.type` is `proxy_error` or `invalid_request_error`. |
-| `413` | Context length exceeded. `error.code` is `context_length_exceeded`. |
-| `429` | Upstream rate limit. `error.code` is `too_many_requests`. |
-| `500` | Unexpected proxy failure. |
+Quality starts to degrade past ~500k–750k tokens. For anything long-running, it's worth compacting your context around the 500k mark.
+
+---
+
+## Endpoints
+
+### `POST /chat/completions`
+Main chat endpoint. Fully OpenAI-compatible.
+
+---
+
+### `POST /chat/follow-ups`
+Returns a list of suggested follow-up questions for a conversation.
+
+**Request:**
+```json
+{ "messages": [...], "count": 3 }
+```
+
+**Response:**
+```json
+{ "success": true, "follow_ups": ["Question 1", "Question 2", "Question 3"], "latencyMs": 420 }
+```
+
+`count` must be between 1 and 20. Duplicates are removed automatically.
 
 ---
 
 ### `POST /decide/run`
+Exposes Inception's structured decision API for binary questions, scoring, and multiple-choice classification — with automatic auth injection.
 
-Pass-through to Inception's Decide API with auth injection and retry on token rejection. The request body is forwarded largely as-is after validation.
+**Request:**
+```json
+{
+  "state": "You are evaluating customer sentiment.",
+  "questions": [
+    {
+      "type": "noul",
+      "instructions": "Is this message positive?",
+      "options": [
+        { "id": "y", "description": "Yes" },
+        { "id": "n", "description": "No" }
+      ]
+    }
+  ]
+}
+```
 
-**Request body**
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `state` (or `system`, `prompt`, `system_prompt`) | string | yes | The system prompt / context for the decision. |
-| `questions` | array | yes | One or more question objects. Each needs an `id`, `name`, `type` (`noul`, `choice`, `score`), and an `instructions` (or `question`, `title`, `subject`, `q`) field. |
-| `images` | array | no | Base64 images to attach to the decision. |
-
-Aliases for `type`: `binery`, `binary`, `yes_no`, `yes/no`, `probability`, `rate` are all mapped to `noul`.
-
-Missing `id`, `name`, and option `description` fields are filled in automatically.
+Accepted question types: `noul` (binary/yes-no), `choice`, `score`. Aliases like `binary`, `yes_no`, and `probability` are mapped automatically.
 
 ---
 
 ### `GET /health`
+Liveness check.
 
 ```json
 { "status": "ok", "token_loaded": true }
-```
-
-`token_loaded` reflects whether the proxy currently holds a session token. Useful as a liveness/readiness probe.
-
----
-
-## Message format
-
-The proxy accepts standard OpenAI messages and converts them to Mercury's `parts` array internally.
-
-### Supported roles
-
-| Role | Conversion |
-|---|---|
-| `system` | Converted to a user message prefixed with `[SYSTEM]: ` |
-| `user` | Converted to a user message with a single text part |
-| `assistant` | Converted to an assistant message with a reasoning part and a text part. If `tool_calls` are present, they are rendered as `[TOOL_CALL]: {...}` lines appended to the text. |
-| `tool` | Converted to a user message prefixed with `[TOOL_RESULT id=<tool_call_id>]: ` |
-
-### Content arrays
-
-`content` may be a string or an array of parts. For arrays, only `part.text` is extracted and the parts are joined with a space. Images and other part types are **not** forwarded to Mercury — this is a text-only adapter.
-
-### Example
-
-```json
-{
-  "messages": [
-    { "role": "system", "content": "You are a helpful assistant." },
-    { "role": "user", "content": "What is the weather in Paris?" },
-    { "role": "assistant", "content": null, "tool_calls": [
-      { "id": "call_abc", "type": "function",
-        "function": { "name": "get_weather", "arguments": "{\"city\":\"Paris\"}" } }
-    ]},
-    { "role": "tool", "tool_call_id": "call_abc",
-      "content": "{\"temperature\":18,\"conditions\":\"cloudy\"}" }
-  ]
-}
 ```
 
 ---
 
 ## Tool calls
 
-Mercury has **no native function calling**. The proxy implements tool calls by:
+Mercury has no native function calling. The proxy adds it by:
 
-1. **Injecting a system prompt.** When `tools` is non-empty, `buildToolsSystemPrompt()` renders each tool's name, description, and JSON Schema into a user message followed by an assistant acknowledgement. The prompt instructs the model to emit calls in exactly this format:
+1. Injecting your tool definitions into the system prompt before each request.
+2. Asking the model to emit calls in a structured format when it needs to use a tool.
+3. Parsing that output and re-emitting it as OpenAI's standard `tool_calls` structure — streamed in the same fragmented format OpenAI uses.
 
-   ```
-   [TOOL_CALL]: {"name": "get_weather", "arguments": {"city": "Paris"}}
-   ```
+**Reliability: ~85% on short conversations, ~62% on conversations over 75k tokens.** Longer context increases the chance the model reformats the marker. The parser handles markdown-fenced JSON and most common formatting variations, but it isn't perfect.
 
-2. **Parsing those markers out of the stream.** `ToolAwareStreamer` buffers incoming deltas so a partial `[TOOL_CALL]` marker is never emitted as normal content. Once the stream ends, `extractToolCalls()` walks the buffer with a brace-balancing JSON scanner (string-aware, escape-aware) and rebuilds each call.
-
-3. **Re-emitting them in OpenAI's format.** `streamToolCalls()` produces:
-
-   - First chunk per call: `tool_calls[].id`, `type: "function"`, `function.name`, `function.arguments: ""`.
-   - N chunks with `function.arguments` deltas (8 chars each).
-   - Final chunk: `finish_reason: "tool_calls"`.
-
-### Reliability
-
-Tool-call reliability is **~87 % on short conversations** and **~62 % on conversations over 75k tokens**. Failures fall into three buckets:
-
-- The model wraps the JSON in markdown fences — the parser strips ` ```json ` and ` ``` ` before scanning, so most of these recover.
-- The JSON contains a `}` inside a string value — the brace counter is string- and escape-aware, so this is handled.
-- The stream ends mid-JSON (upstream timeout, rate limit mid-generation) — the parser skips the malformed call and keeps the surrounding text as content.
-
-### Tool definition format
-
-Standard OpenAI:
+**Tool definition format** — standard OpenAI:
 
 ```json
 {
   "type": "function",
   "function": {
     "name": "get_weather",
-    "description": "Get the current weather for a city.",
+    "description": "Get current weather for a city.",
     "parameters": {
       "type": "object",
       "properties": {
-        "city": { "type": "string" },
-        "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+        "city": { "type": "string" }
       },
       "required": ["city"]
     }
   }
 }
-```
-
-Bare function objects (`{ "name": ..., "description": ..., "parameters": ... }` without the `type`/`function` wrapper) are also accepted.
-
----
-
-## Streaming markers and timing
-
-### Search markers
-
-When `search: true` and the model searches, two string markers appear inside `delta.content`:
-
-- `<SEARCHING>` — emitted once when the upstream starts a web search.
-- `<FINISHED_SEARCHING>` — emitted once before the answer text begins.
-
-Sources are attached as a `sources` array on a separate content chunk:
-
-```json
-{
-  "choices": [{
-    "delta": {
-      "role": "assistant",
-      "content": "",
-      "sources": [
-        {
-          "url": "https://example.com",
-          "title": "Example",
-          "snippet": "",
-          "cite_index": 1,
-          "published_at": null,
-          "site_name": "example.com",
-          "query_indexes": [0]
-        }
-      ]
-    }
-  }]
-}
-```
-
-Clients that understand sources can render citations; clients that don't will ignore the field.
-
-### Timing
-
-The final `stop` chunk carries a `timing` object:
-
-```json
-{
-  "choices": [{ "delta": {}, "finish_reason": "stop" }],
-  "usage": { "prompt_tokens": 42, "completion_tokens": 318, "total_tokens": 360 },
-  "timing": {
-    "first_token_time": 412,
-    "streaming_time": 3081,
-    "speed": 47
-  }
-}
-```
-
-| Field | Meaning |
-|---|---|
-| `first_token_time` | Milliseconds from request start to the first content delta. |
-| `streaming_time` | Milliseconds from the first content delta to the last. |
-| `speed` | Tokens per second, computed as `completion_tokens / (streaming_time / 1000)`. |
-
----
-
-## Examples
-
-### OpenAI Python SDK
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8101",
-    api_key="unused",
-)
-
-# Streaming
-for chunk in client.chat.completions.create(
-    model="mercury",
-    messages=[{"role": "user", "content": "Explain diffusion models in one paragraph."}],
-    stream=True,
-    extra_body={"intelligence": 2, "search": False},
-):
-    if chunk.choices[0].delta.content:
-        print(chunk.choices[0].delta.content, end="", flush=True)
-```
-
-### OpenAI Node SDK
-
-```javascript
-import OpenAI from "openai";
-
-const client = new OpenAI({
-  baseURL: "http://localhost:8101",
-  apiKey: "unused",
-});
-
-const stream = await client.chat.completions.create({
-  model: "mercury",
-  messages: [{ role: "user", content: "What's the weather in Paris?" }],
-  tools: [{
-    type: "function",
-    function: {
-      name: "get_weather",
-      description: "Get the current weather for a city.",
-      parameters: {
-        type: "object",
-        properties: { city: { type: "string" } },
-        required: ["city"],
-      },
-    },
-  }],
-  stream: true,
-  extra_body: { intelligence: 1, search: false },
-});
-
-for await (const chunk of stream) {
-  const delta = chunk.choices[0]?.delta;
-  if (delta?.content) process.stdout.write(delta.content);
-  if (delta?.tool_calls) console.log("tool:", delta.tool_calls);
-}
-```
-
-### curl (streaming)
-
-```bash
-curl -N http://localhost:8101/chat/completions \
-  -H "content-type: application/json" \
-  -d '{
-    "messages": [{"role": "user", "content": "What is 2+2?"}],
-    "stream": true,
-    "intelligence": 1
-  }'
-```
-
-### curl (web search)
-
-```bash
-curl -N http://localhost:8101/chat/completions \
-  -H "content-type: application/json" \
-  -d '{
-    "messages": [{"role": "user", "content": "What did the BBC publish today?"}],
-    "stream": true,
-    "search": true,
-    "intelligence": 2
-  }'
-```
-
-### Multi-turn with conversation reuse
-
-```bash
-# Turn 1
-curl http://localhost:8101/chat/completions \
-  -H "content-type: application/json" \
-  -d '{
-    "messages": [{"role": "user", "content": "My name is Sam."}],
-    "stream": false,
-    "chatId": "session-42"
-  }'
-
-# Turn 2 — same chatId, model remembers
-curl http://localhost:8101/chat/completions \
-  -H "content-type: application/json" \
-  -d '{
-    "messages": [
-      {"role": "user", "content": "What is my name?"}
-    ],
-    "stream": false,
-    "chatId": "session-42"
-  }'
 ```
 
 ---
@@ -529,30 +278,26 @@ curl http://localhost:8101/chat/completions \
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `Error reading config file` at startup | `config.json` missing | Create it (see [Configuration](#configuration-configjson)). |
-| `proxy list is empty, but config.proxy.enabled is true` | `proxies.txt` missing or empty | Disable the proxy or add proxies. |
-| `Cannot read properties of undefined (reading 'getReader')` | `parseStream` received `undefined` — the upstream call failed before returning a body | Check the `[STREAM] Error` log line above it. Usually a timeout or 429. |
-| Requests hang for ~30 s then fail | `AbortSignal.timeout` not applied — options were passed as a third argument to `impit.fetch` | All options must be in the **second** argument: `fetch(url, { headers, signal, timeout, body })`. |
-| `TypeError: Cannot read properties of undefined (reading 'bind')` in `undici` | Node < 22.15 lacks `zlib.createZstdDecompress` | Upgrade Node to 22.15+ or 24. |
-| `429 Too Many Requests` from upstream | >30 req/s on one IP | Add proxies or throttle. |
-| `413 context_length_exceeded` | >1M tokens | Reduce message length. |
-| Tool calls never appear | Model did not emit `[TOOL_CALL]` | See [Tool calls](#tool-calls). Try a shorter prompt. |
-| `stream ended without [DONE]` | Upstream dropped the connection | Retry. The proxy's `finally` block closes the response cleanly. |
+| `Error reading config file` at startup | `config.json` is missing | Create it — see [Quick start](#quick-start) |
+| `proxy list is empty` error | `proxies.txt` is missing or empty, but proxy is enabled | Add proxies or set `"enabled": false` |
+| Requests hang for ~30s then fail | A session timeout or upstream error | Check the log for `[STREAM] Error` just above the hang |
+| `TypeError: zlib.createZstdDecompress` | Node.js version is too old | Upgrade to Node 22.15+ |
+| `429 Too Many Requests` | Exceeded 30 req/min on your current proxy IP | Enable the proxy pool and add more proxies |
+| `413 context_length_exceeded` | Message history is over 1M tokens | Compact your context |
+| Tool calls never appear | Model didn't emit the structured marker | Try a shorter conversation; tool call reliability drops on long context |
+
+---
+
+## Contributing
+
+Forks and pull requests are welcome. If you fork or redistribute this project, your version must carry the GPL v3 license.
 
 ---
 
 ## Legal
 
-This project is provided **as-is**, for **educational and research purposes only**.
+This project is released under **GPL v3**. Free to use and modify; any distributed modifications must include this license. **Not for commercial use. Experimental only.**
 
-- It is **not** affiliated with, endorsed by, or supported by Inception Labs or Vercel.
-- Using it against Inception's production endpoints may violate their Terms of Service.
-- Using it to circumvent Vercel's bot protection may violate Vercel's Acceptable Use Policy.
-- The proxy pool is intended for load distribution and resilience, **not** for evading rate limits or access controls.
-- You are solely responsible for ensuring your use complies with all applicable laws, terms of service, and policies.
-
-See [`WARNING.txt`](./WARNING.txt) for the full notice. If you do not agree with it, do not run this code.
-
+This project is not affiliated with or endorsed by Inception Labs or Vercel. Using it against Inception's production endpoints may conflict with their Terms of Service — you're solely responsible for your usage. Read [`WARNING.txt`](./WARNING.txt) before running.
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-
