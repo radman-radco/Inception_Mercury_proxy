@@ -4,6 +4,6 @@
         "path": "./proxies.txt"
     },
     "browser": {
-        "type": "chrome"
+        "type": "firefox"
     }
 }
