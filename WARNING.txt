@@ -1,0 +1,133 @@
+================================================================================
+                         MERCURY PROXY — WARNING
+================================================================================
+
+Read this before running the server. By running this code you confirm that you
+have read and understood everything below, and that you accept full
+responsibility for how you use it.
+
+--------------------------------------------------------------------------------
+WHAT THIS SOFTWARE DOES
+--------------------------------------------------------------------------------
+
+This proxy connects to chat.inceptionlabs.ai — Inception Labs' public web chat
+endpoint for their Mercury model — and exposes it as a local OpenAI-compatible
+HTTP API.
+
+It does this by:
+
+  - Impersonating a real Chrome browser's TLS fingerprint to pass Vercel's
+    bot-detection layer (using the `impit` library).
+  - Obtaining and rotating short-lived session tokens from /api/session.
+  - Optionally routing requests through a pool of third-party HTTP proxies,
+    each with its own IP address and independent rate-limit budget.
+
+--------------------------------------------------------------------------------
+NOT AFFILIATED WITH INCEPTION LABS OR VERCEL
+--------------------------------------------------------------------------------
+
+This project is an independent, unofficial tool. It is not endorsed, authorised,
+or supported by Inception Labs, Inc. or Vercel, Inc. in any way.
+
+The Mercury name and model are the property of Inception Labs.
+Vercel is the infrastructure provider for chat.inceptionlabs.ai.
+
+Neither company has reviewed this code or consented to its use.
+
+--------------------------------------------------------------------------------
+TERMS OF SERVICE
+--------------------------------------------------------------------------------
+
+Using this software may conflict with:
+
+  - Inception Labs' Terms of Service (https://inceptionlabs.ai/terms)
+  - Vercel's Acceptable Use Policy (https://vercel.com/legal/acceptable-use)
+
+Specific concerns include:
+
+  1. Automated access — the proxy makes programmatic requests to a service
+     designed for interactive human use.
+
+  2. TLS fingerprint impersonation — presenting a browser fingerprint from an
+     automated client may be considered circumvention of bot protection.
+
+  3. Proxy pool usage — routing traffic through third-party IP addresses to
+     obtain additional rate-limit budgets may be treated as circumvention of
+     access controls.
+
+  4. Session token use — the session token system is an authentication
+     mechanism; automated use of it may violate the terms governing that system.
+
+You are solely responsible for reviewing the applicable terms and ensuring your
+usage complies with them. This notice does not constitute legal advice.
+
+--------------------------------------------------------------------------------
+THIRD-PARTY PROXIES
+--------------------------------------------------------------------------------
+
+The included proxies.txt file contains IP addresses of third-party HTTP proxy
+servers sourced from public lists. These servers are not operated by this
+project and their operators have not consented to being listed here.
+
+By using the proxy pool you are routing your traffic through infrastructure you
+do not control. Consider:
+
+  - The proxy operator can observe your unencrypted traffic.
+  - Requests to Mercury appear to originate from the proxy's IP, not yours.
+  - Free proxy lists are publicly scraped; there is no vetting for safety
+    or legality of individual nodes.
+
+Use the proxy pool at your own risk. Remove proxies.txt or set
+"proxy.enabled": false in config.json to disable this feature entirely.
+
+--------------------------------------------------------------------------------
+NOT FOR COMMERCIAL USE
+--------------------------------------------------------------------------------
+
+This software is released under the GNU General Public License v3 (GPL-3.0).
+
+It is intended for personal, educational, and experimental use only.
+
+You may NOT use this software, or any derivative of it, to:
+
+  - Provide Mercury access as a commercial service to third parties.
+  - Resell access to Mercury's model, directly or indirectly.
+  - Build a product that charges users for access to Mercury through this proxy.
+  - Operate it in any context where financial consideration is exchanged for
+    the AI outputs it produces.
+
+If you modify and distribute this software, your version must also be released
+under GPL-3.0 and must include this WARNING.txt or an equivalent notice.
+
+--------------------------------------------------------------------------------
+NO WARRANTY
+--------------------------------------------------------------------------------
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED. THE AUTHORS ACCEPT NO LIABILITY FOR:
+
+  - Any breach of Inception Labs' or Vercel's terms of service.
+  - Any legal consequences arising from your use of this software.
+  - Data loss, service interruptions, or unexpected behaviour.
+  - Actions taken by third-party proxy operators against your traffic.
+  - Any direct, indirect, incidental, or consequential damages of any kind.
+
+USE THIS SOFTWARE AT YOUR OWN RISK.
+
+--------------------------------------------------------------------------------
+EXPERIMENTAL STATUS
+--------------------------------------------------------------------------------
+
+This project is experimental. It relies on undocumented internal APIs that
+Inception Labs may change or close at any time without notice. There is no
+guarantee that it will continue to work, and no commitment to maintain
+compatibility with future changes to Mercury's backend.
+
+--------------------------------------------------------------------------------
+IF YOU DO NOT AGREE
+--------------------------------------------------------------------------------
+
+If you do not accept the terms above, do not run this software.
+Delete the repository and all copies you have made.
+
+================================================================================
