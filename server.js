@@ -271,6 +271,17 @@ async function search_for_proxy(loop) {
 
 search_for_proxy(true);
 
+setInterval(async()=>{
+  // renew token every 2 minutes
+  console.log("[TOKEN] renewing current session token...")
+  
+  try{
+    invalidateToken()
+    let new_val = await fetchToken()    
+    if (new_val) console.log("[TOKEN] Successfully renewed current session token. NEW TOKEN=> " + token)
+  }catch(_) {search_for_proxy(false)}
+}, 2 * 60 *1000)
+
 
 function invalidateToken() {
   token = null;
@@ -587,6 +598,7 @@ async function callInception({ convId, messages, reasoningEffort, webSearch }) {
   } catch (error) {
     error.message = error?.message?.toLowerCase()?.trim()
     if (error?.message?.includes("timeout") || error?.message?.includes("time out") || error?.message?.includes("Network error") || error?.message?.includes("rejected") || error?.message?.includes("failed") || error?.message?.includes("refused") ) {
+      if(clients[best_client.index].proxy !== false){ 
       clients[best_client.index].status = "unreachable"
       clients[best_client.index].successfull_reqs = 0
       invalidateToken()
@@ -596,6 +608,7 @@ async function callInception({ convId, messages, reasoningEffort, webSearch }) {
         }
       }, 1 * 60 * 60 * 1000) //1 hour
       search_for_proxy(false)
+     }
     }
 
     throw error;
@@ -1146,6 +1159,7 @@ app.post("/chat/follow-ups", async (req, res) => {
   } catch (error) {
     console.error(`[FOLLOW-UPS] Error: ${error.message}`);
     if (error?.message?.includes("timeout") || error?.message?.includes("time out") || error?.message?.includes("Network error") || error?.message?.includes("rejected")) {
+      if(clients[best_client.index].proxy !== false){ 
       clients[best_client.index].status = "unreachable"
       clients[best_client.index].successfull_reqs = 0
       invalidateToken()
@@ -1153,6 +1167,7 @@ app.post("/chat/follow-ups", async (req, res) => {
         if (clients[best_client.index].status === "unreachable") clients[best_client.index].status = "active"
       }, 1 * 60 * 60 * 1000) //1 hour
       search_for_proxy(false)
+     }
     }
     return res.status(500).json({ success: false, message: error.message });
   }
