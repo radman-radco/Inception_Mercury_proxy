@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-**Free, unlimited access to [Mercury](https://chat.inceptionlabs.ai) — the same model behind Inception Labs' paid API — by routing requests through their free chat endpoint and exposing it as a fully OpenAI-compatible local server.**
+**Free, unlimited API access to [Mercury](https://chat.inceptionlabs.ai) — the same model behind Inception Labs' paid API — by routing requests through their free chat endpoint and exposing it as a fully OpenAI-compatible local server.**
 
 This proxy gives you free acsess to Mercury-3 for free: including streaming, tool calls (~85% reliability), and up to 1,000,000 tokens of context. The included 1,900+ proxy list gives each proxy its own 30 req/min budget from Mercury's backend (1,900 × 30 = **57,000 req/min**), and rolling session management automatically switches proxies before you hit a limit — so long agentic runs never get cut off. In local testing on a consumer PC, we reached **927 req/s** before stopping.
 
