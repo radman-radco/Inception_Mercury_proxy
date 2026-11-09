@@ -1,6 +1,6 @@
 # Mercury AI Proxy
 
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.1)
 
 **Free, unlimited access to [Mercury](https://chat.inceptionlabs.ai) — the same model behind Inception Labs' paid API — by routing requests through their free chat endpoint and exposing it as a fully OpenAI-compatible local server.**
 
