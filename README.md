@@ -33,7 +33,7 @@ Your PC running the worker  ==>  Free Proxy  ==> chat.inceptionlabs.ai
 - **Up to 1,000,000 token context** — the full Mercury window. Recommended to compact around 500k tokens to avoid quality degradation.
 - **Tool calls with ~85% reliability** — Mercury has no native function calling. The proxy adds it by injecting tool definitions as a system prompt, parsing the model's structured output, and re-emitting it as standard OpenAI `tool_calls`. Reliability drops to ~62% on conversations over 75k tokens.
 - **Automatic proxy rotation** — a background health checker keeps the pool warm. Dead proxies are quarantined for an hour, rate-limited ones for 60 seconds. When all active proxies are exhausted, a fresh one is pulled from the list automatically.
-- **57,000+ req/min theoretical throughput** — 1,900+ proxies × 30 req/min each. Real-world tested to 927 req/s on a consumer machine.
+- **57,000+ req/min theoretical throughput** — 1,900+ proxies × 30 req/min each. Real-world tested to 927 req/s on a consumer machine. 
 - **Web search** — pass `"search": true` to let Mercury search the web; sources come back as a cited array in the response.
 - **Follow-ups endpoint** — `POST /chat/follow-ups` returns deduplicated suggested follow-up questions.
 - **Decide API** — `POST /decide/run` exposes Inception's structured classification/scoring endpoint with auto-injected auth.
