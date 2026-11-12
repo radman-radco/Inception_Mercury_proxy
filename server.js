@@ -10,6 +10,7 @@
  *   intelligence: 0=instant, 1=low, 2=medium, 3=high
  *   search:       false by default, pass true to enable web search
  *   chatId:       reuse the same value to keep the same upstream conversation
+ * IMPORTANT => SESSIONS ARE RATE-LIMMITED BY IP NOT DEVICE
  */
 
 console.error("===========================================================\nThanks for using Inception Mercury proxy, this proxy is only for Educational purposes, if you like the project consider leaving a star on my github repo: https://github.com/radman-radco/Inception_Mercury_proxy \n\n [] Starting up... Please dont make any requests within the next 30s while we find the best proxy to use... \n========================================================================\n")
