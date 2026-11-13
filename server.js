@@ -10,10 +10,9 @@
  *   intelligence: 0=instant, 1=low, 2=medium, 3=high
  *   search:       false by default, pass true to enable web search
  *   chatId:       reuse the same value to keep the same upstream conversation
- * IMPORTANT => SESSIONS ARE RATE-LIMMITED BY IP NOT DEVICE
  */
 
-console.error("===========================================================\nThanks for using Inception Mercury proxy, this proxy is only for Educational purposes, if you like the project consider leaving a star on my github repo: https://github.com/radman-radco/Inception_Mercury_proxy \n\n [] Starting up... Please dont make any requests within the next 30s while we find the best proxy to use... \n========================================================================\n")
+console.error("========================================================================\nThanks for using Inception Mercury proxy, this proxy is only for Educational purposes, if you like the project consider leaving a star on my github repo: https://github.com/radman-radco/Inception_Mercury_proxy \n\n [] Starting up... Please dont make any requests within the next 30s while we find the best proxy to use... \n========================================================================\n")
 
 const express = require("express");
 const axios = require("axios");
@@ -23,7 +22,7 @@ const crypto = require("crypto");
 const { Impit } = require("impit");
 const fs = require("fs");
 
-const PORT = process.env.PORT || 3003;
+const PORT = process.env.PORT || 8101;
 const BASE = "https://chat.inceptionlabs.ai";
 const MODEL = "mercury";
 const PROXY_LIST = []
@@ -205,7 +204,7 @@ async function fetchToken(best_client) {
       invalidateToken()
       setTimeout(() => {
         if (clients[best_client.index].status == "rate_limited") clients[best_client.index].status = "active"
-      }, 5 * 60 * 1000) //5 minutes
+      }, 60 * 1000) //1 minute
       search_for_proxy(false)
     }
     throw new Error("Failed to fetch session, status code: " + res.status);
@@ -240,8 +239,9 @@ async function search_for_proxy(loop) {
 
   console.log("[SEARCH_FOR_PROXY] searching for proxy...")
 
+  let attempts = 0;
   let errored = true
-  while (errored) {  
+  while (errored && attempts < 30) {  
     invalidateToken()
     let best_client = get_best_client()
     try {
@@ -253,18 +253,20 @@ async function search_for_proxy(loop) {
     } catch (err) {
       errored = true
       console.error("[SEARCH_FOR_PROXY] Error fetching token: ", err)
+      if(clients[best_client.index].use_proxy !== false){ 
       clients[best_client.index].status = "unreachable"
       clients[best_client.index].successfull_reqs = 0
       setTimeout(() => {
         if (clients[best_client.index].status === "unreachable") clients[best_client.index].status = "active"
       }, 1 * 60 * 60 * 1000) //1 hour
       invalidateToken()
+      }
     }
-
+    attempts++
   }
 
   if (loop === true) {  
-    setTimeout(() => search_for_proxy(true), 3 * 60 * 1000) //30 seconds
+    setTimeout(() => search_for_proxy(true), 5 * 60 * 1000) //5 minutes
   }
   proxy_searcher_running = false;
   return true
@@ -273,15 +275,14 @@ async function search_for_proxy(loop) {
 search_for_proxy(true);
 
 setInterval(async()=>{
-  // renew token every 2 minutes
+  // renew token every 1.5 minutes
   console.log("[TOKEN] renewing current session token...")
-  
   try{
     invalidateToken()
     let new_val = await fetchToken()    
-    if (new_val) console.log("[TOKEN] Successfully renewed current session token. NEW TOKEN=> " + token)
+    if (new_val) console.log("[TOKEN] Successfully renewed current session token. ")
   }catch(_) {search_for_proxy(false)}
-}, 2 * 60 *1000)
+}, 1.5 * 60 *1000)
 
 
 function invalidateToken() {
@@ -599,7 +600,7 @@ async function callInception({ convId, messages, reasoningEffort, webSearch }) {
   } catch (error) {
     error.message = error?.message?.toLowerCase()?.trim()
     if (error?.message?.includes("timeout") || error?.message?.includes("time out") || error?.message?.includes("Network error") || error?.message?.includes("rejected") || error?.message?.includes("failed") || error?.message?.includes("refused") ) {
-      if(clients[best_client.index].proxy !== false){ 
+      if(clients[best_client.index].use_proxy !== false){ 
       clients[best_client.index].status = "unreachable"
       clients[best_client.index].successfull_reqs = 0
       invalidateToken()
@@ -1160,13 +1161,13 @@ app.post("/chat/follow-ups", async (req, res) => {
   } catch (error) {
     console.error(`[FOLLOW-UPS] Error: ${error.message}`);
     if (error?.message?.includes("timeout") || error?.message?.includes("time out") || error?.message?.includes("Network error") || error?.message?.includes("rejected")) {
-      if(clients[best_client.index].proxy !== false){ 
-      clients[best_client.index].status = "inactive"
+      if(clients[best_client.index].use_proxy !== false){ 
+      clients[best_client.index].status = "unreachable"
       clients[best_client.index].successfull_reqs = 0
       invalidateToken()
       setTimeout(() => {
-        if (clients[best_client.index].status === "inactive") clients[best_client.index].status = "active"
-      }, 8 * 60 * 60 * 1000) //8 hour
+        if (clients[best_client.index].status === "unreachable") clients[best_client.index].status = "active"
+      }, 1 * 60 * 60 * 1000) //1 hour
       search_for_proxy(false)
      }
     }
@@ -1180,8 +1181,8 @@ app.get("/health", (req, res) => res.json({ status: "ok", token_loaded: token !=
 
 
 app.listen(PORT, () => {
-  console.log(`Inception proxy  →  http://localhost:${PORT}`);
-  console.log("  POST /chat/completions    OpenAI-compatible chat");
-  console.log("  POST /decide/run          Inception Decide API");
+  console.log(`Inception proxy → http://localhost:${PORT}`);
+  console.log("  POST /chat/completions   OpenAI-compatible chat");
+  console.log("  POST /decide/run         Inception Decide API");
   console.log("  GET  /health");
 });
