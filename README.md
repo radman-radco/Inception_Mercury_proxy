@@ -42,7 +42,7 @@ Your PC running the worker  ==>  Free Proxy  ==> chat.inceptionlabs.ai
 
 ---
 
-## Performance
+## Performance 
 
 Benchmarked locally, single machine, no proxy:
 
