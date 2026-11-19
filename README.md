@@ -16,7 +16,7 @@ Personally used with [OpenCode](https://opencode.ai). Experimental and education
 ## What it does
 
 Mercury's paid API isn't free, but their public web chat is. This proxy sits between you and that chat endpoint, handling session tokens, request formatting, and response parsing — then hands everything back in the OpenAI wire format your tools already understand.
-
+ 
 It also solves a throughput problem. Mercury limits each IP to **30 requests per minute**. With a pool of proxies, each one gets its own independent 30 req/min budget. The included `proxies.txt` ships with **1,900+ proxies**, giving a theoretical ceiling of **57,000 requests per minute**. In local testing we reached **927 req/s** before stopping — and it likely goes higher.
 
 When a session approaches its limit on the current proxy, the proxy automatically rolls to the next one — no dropped requests, no manual intervention required.
