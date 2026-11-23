@@ -21,7 +21,7 @@ const { getEncoding } = require("js-tiktoken");
 const crypto = require("crypto");
 const { Impit } = require("impit");
 const fs = require("fs");
-
+ 
 const PORT = process.env.PORT || 8101;
 const BASE = "https://chat.inceptionlabs.ai";
 const MODEL = "mercury";
