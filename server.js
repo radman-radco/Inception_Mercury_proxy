@@ -685,8 +685,7 @@ async function* parseStream(stream) {
 }
 
 // ---------------------------------------------------------------------------
-// OpenAI SSE helpers
-// ---------------------------------------------------------------------------
+// OpenAI SSE helpers ---------------------------------------------------------------------------
 const sse = (obj) => `data: ${JSON.stringify(obj)}\n\n`;
 
 function chunkObj(id, created, delta, finishReason = null, usage = undefined, start_time = null, first_token_time = null, token_per_second = null) {
