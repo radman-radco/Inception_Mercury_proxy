@@ -1,5 +1,5 @@
 # Mercury AI Proxy
-## ⚠️ Mercury is retiring its API & Chat at December 28, this proxy may not work
+## ⚠️ Mercury is retiring its API & Chat at December 28, this proxy may no longer work
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
