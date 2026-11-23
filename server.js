@@ -4,7 +4,7 @@
  * Endpoints:
  *   POST /chat/completions  chat (streaming + non-streaming, tool calls)
  *   POST /decide/run        Inception Decide API (pass-through with auth injection)
- *   GET  /health
+ *   GET  /health 
  *
  * Request extras:
  *   intelligence: 0=instant, 1=low, 2=medium, 3=high
